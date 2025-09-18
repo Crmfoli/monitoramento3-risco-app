@@ -1,4 +1,5 @@
- app.py
+# app.py
+# CORREÇÃO: Garantindo que não há indentação inesperada no início do arquivo.
 
 import eventlet
 eventlet.monkey_patch()
@@ -121,3 +122,9 @@ def handle_connect():
 def on_join(data):
     localidade = data['localidade']
     join_room(localidade)
+
+# --- Ponto de Entrada ---
+if __name__ == '__main__':
+    print("Servidor rodando localmente em http://127.0.0.1:5000")
+    socketio.run(app, debug=True, port=5000)
+

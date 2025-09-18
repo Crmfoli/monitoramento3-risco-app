@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Painel de Monitoramento de Localidades</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        body { font-family: 'Roboto', sans-serif; background-color: #121212; color: #E0E0E0; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; margin: 0; }
+        .container { border-radius: 15px; padding: 40px; width: 80%; max-width: 600px; background-color: #1E1E1E; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { color: #FFFFFF; margin-bottom: 30px; }
+        .location-list a {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #333;
+            color: #E0E0E0;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-size: 1.5em;
+            transition: background-color 0.5s ease, transform 0.2s ease;
+        }
+        .location-list a:hover {
+            transform: scale(1.03);
+            color: #FFFFFF;
+        }
+        .risk-status {
+            font-size: 0.8em;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background-color: rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Painel de Monitoramento</h1>
+        <div class="location-list">
+            {% for local in localidades %}
+                <a href="/localidade/{{ local }}" id="local-{{ local }}" style="background-color: {{ estados_iniciais[local].cor_fundo }};">
+                    <span>Localidade {{ local }}</span>
+                    <span class="risk-status" id="risco-{{ local }}">{{ estados_iniciais[local].risco }}</span>
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+    <script type="text/javascript">
+        var socket = io();
+        socket.on('update_index', function(data) {
+            for (const localId in data) {
+                const localData = data[localId];
+                const linkElement = document.getElementById('local-' + localId);
+                const riskSpan = document.getElementById('risco-' + localId);
+
+                if (linkElement && riskSpan) {
+                    linkElement.style.backgroundColor = localData.cor_fundo;
+                    riskSpan.textContent = localData.risco;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

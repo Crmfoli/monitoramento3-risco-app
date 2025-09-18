@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alerta de Encosta - Localidade {{ nome_localidade }}</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        body { font-family: 'Roboto', sans-serif; background-color: #121212; color: #E0E0E0; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; }
+        .container { border-radius: 15px; padding: 40px; width: 80%; max-width: 700px; background-color: #1E1E1E; box-shadow: 0 10px 25px rgba(0,0,0,0.5); margin: 20px auto; }
+        h1 { font-size: 2.5em; margin-bottom: 30px; color: #FFFFFF; }
+        .data-point { margin-bottom: 25px; }
+        .data-point .label { font-size: 1.2em; color: #AAAAAA; }
+        .data-point .value { font-size: 3.5em; font-weight: 700; color: #87CEEB; }
+        .status-box { padding: 20px; border-radius: 10px; font-size: 3em; font-weight: 700; color: white; transition: background-color 0.5s ease; margin-bottom: 20px; }
+        .footer { margin-top: 30px; font-size: 0.9em; color: #666666; }
+        .back-link { position: absolute; top: 20px; left: 20px; color: #87CEEB; text-decoration: none; font-size: 1em;}
+        .chart-button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; transition: background-color 0.3s ease; margin-top: 10px; margin-right: 10px; }
+        .chart-button:hover { background-color: #0056b3; }
+        .chart-container { display: none; margin-top: 30px; background-color: #2a2a2a; padding: 20px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">&larr; Voltar para a seleção</a>
+    <div class="container">
+        <h1>Monitoramento da Localidade {{ nome_localidade }}</h1>
+        <div class="data-point">
+            <div class="label">Umidade do Solo</div>
+            <div id="umidade-valor" class="value">-- %</div>
+        </div>
+        <div class="data-point">
+            <div class="label">Chuva Acumulada (24h)</div>
+            <div id="chuva-valor" class="value">-- mm</div>
+        </div>
+        <div id="status-box" class="status-box" style="background-color: #333333;">
+            <span id="risco-texto">Conectando...</span>
+        </div>
+        <button class="chart-button" id="toggle-chuva-chart">Gráfico de Chuva</button>
+        <button class="chart-button" id="toggle-umidade-chart" style="background-color: #ff8c00;">Gráfico de Umidade</button>
+        <div class="chart-container" id="chuva-chart-container"><canvas id="chuvaChart"></canvas></div>
+        <div class="chart-container" id="umidade-chart-container"><canvas id="umidadeChart"></canvas></div>
+        <div class="footer">Última atualização: <span id="timestamp">--</span></div>
+    </div>
+    <script type="text/javascript">
+        var socket = io();
+        var localidade = "{{ nome_localidade }}";
+        var chuvaChart, umidadeChart;
+        function renderChart(canvasId, chartVar, data, config) {
+            const labels = data.map(item => new Date(item.timestamp).toLocaleTimeString('pt-BR'));
+            const values = data.map(item => item.value);
+            if (chartVar) { chartVar.destroy(); }
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [{ label: config.label, data: values, borderColor: config.borderColor, backgroundColor: config.backgroundColor, borderWidth: 2, fill: true }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'Hora', color: '#E0E0E0' }, ticks: { color: '#AAAAAA' }, grid: { color: '#333333' } }, y: { title: { display: true, text: config.yAxisLabel, color: '#E0E0E0' }, beginAtZero: true, ticks: { color: '#AAAAAA' }, grid: { color: '#333333' } } }, plugins: { legend: { labels: { color: '#E0E0E0' } } } } });
+        }
+        function fetchAndRenderChuvaChart() { fetch(`/api/historico_chuva/${localidade}`).then(response => response.json()).then(data => { chuvaChart = renderChart('chuvaChart', chuvaChart, data.map(d => ({...d, value: d.chuva})), { label: 'Chuva (mm) Últimas 24h', yAxisLabel: 'Chuva (mm)', borderColor: '#87CEEB', backgroundColor: 'rgba(135, 206, 235, 0.2)' }); }).catch(error => console.error('Erro ao buscar histórico de chuva:', error)); }
+        function fetchAndRenderUmidadeChart() { fetch(`/api/historico_umidade/${localidade}`).then(response => response.json()).then(data => { umidadeChart = renderChart('umidadeChart', umidadeChart, data.map(d => ({...d, value: d.umidade})), { label: 'Umidade do Solo (%) Últimas 24h', yAxisLabel: 'Umidade (%)', borderColor: '#FF8C00', backgroundColor: 'rgba(255, 140, 0, 0.2)' }); }).catch(error => console.error('Erro ao buscar histórico de umidade:', error)); }
+        document.getElementById('toggle-chuva-chart').addEventListener('click', function() { var chartContainer = document.getElementById('chuva-chart-container'); if (chartContainer.style.display === 'none' || chartContainer.style.display === '') { chartContainer.style.display = 'block'; this.textContent = 'Esconder Gráfico de Chuva'; fetchAndRenderChuvaChart(); } else { chartContainer.style.display = 'none'; this.textContent = 'Gráfico de Chuva'; } });
+        document.getElementById('toggle-umidade-chart').addEventListener('click', function() { var chartContainer = document.getElementById('umidade-chart-container'); if (chartContainer.style.display === 'none' || chartContainer.style.display === '') { chartContainer.style.display = 'block'; this.textContent = 'Esconder Gráfico de Umidade'; fetchAndRenderUmidadeChart(); } else { chartContainer.style.display = 'none'; this.textContent = 'Gráfico de Umidade'; } });
+        socket.on('connect', () => socket.emit('join', { localidade }));
+        socket.on('update_data', (data) => { document.getElementById('umidade-valor').innerHTML = data.umidade.toFixed(1) + ' %'; document.getElementById('chuva-valor').innerHTML = data.chuva.toFixed(1) + ' mm'; document.getElementById('risco-texto').innerHTML = data.risco; document.getElementById('timestamp').innerHTML = data.timestamp; document.getElementById('status-box').style.backgroundColor = data.cor_fundo; });
+        setInterval(function() { if (document.getElementById('chuva-chart-container').style.display === 'block') { fetchAndRenderChuvaChart(); } if (document.getElementById('umidade-chart-container').style.display === 'block') { fetchAndRenderUmidadeChart(); } }, 5000);
+    </script>
+</body>
+</html>

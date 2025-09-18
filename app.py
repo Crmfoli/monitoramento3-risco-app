@@ -1,5 +1,5 @@
 # app.py
-# CORREÇÃO: Garantindo que não há indentação inesperada no início do arquivo.
+# VERSÃO COM FORMATAÇÃO CORRIGIDA
 
 import eventlet
 eventlet.monkey_patch()

@@ -3,64 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <title>Painel de Monitoramento de Localidades</title>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-        body { font-family: 'Roboto', sans-serif; background-color: #121212; color: #E0E0E0; display: flex; justify-content: center; align-items: center; min-height: 100vh; text-align: center; margin: 0; }
-        .container { border-radius: 15px; padding: 40px; width: 80%; max-width: 600px; background-color: #1E1E1E; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h1 { color: #FFFFFF; margin-bottom: 30px; }
-        .location-list a {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: #333;
-            color: #E0E0E0;
-            padding: 20px;
-            margin-bottom: 15px;
-            border-radius: 10px;
-            text-decoration: none;
-            font-size: 1.5em;
-            transition: background-color 0.5s ease, transform 0.2s ease;
-        }
-        .location-list a:hover {
-            transform: scale(1.03);
-            color: #FFFFFF;
-        }
-        .risk-status {
-            font-size: 0.8em;
-            font-weight: 700;
-            padding: 5px 10px;
-            border-radius: 5px;
-            background-color: rgba(0,0,0,0.2);
-        }
+        body { font-family: 'Roboto', sans-serif; background-color: #121212; color: #E0E0E0; text-align: center; margin: 0; padding: 20px 0; }
+        .container { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 40px; }
+        .content-box { border-radius: 15px; padding: 40px; width: 80%; max-width: 600px; background-color: #1E1E1E; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { color: #FFFFFF; margin-top:0; margin-bottom: 30px; }
+        #map { height: 400px; width: 100%; border-radius: 15px; margin-bottom: 20px; border: 2px solid #333; }
+        .location-list a { display: flex; justify-content: space-between; align-items: center; background-color: #333; color: #E0E0E0; padding: 20px; margin-bottom: 15px; border-radius: 10px; text-decoration: none; font-size: 1.5em; transition: background-color 0.5s ease, transform 0.2s ease; }
+        .location-list a:hover { transform: scale(1.03); color: #FFFFFF; }
+        .risk-status { font-size: 0.8em; font-weight: 700; padding: 5px 10px; border-radius: 5px; background-color: rgba(0,0,0,0.2); }
+        .leaflet-popup-content-wrapper { background-color: #2a2a2a; color: #E0E0E0; border-radius: 8px; }
+        .leaflet-popup-content { font-size: 14px; }
+        .leaflet-popup-content a { color: #87CEEB; }
+        .leaflet-popup-tip { background-color: #2a2a2a; }
+        .legend { padding: 6px 8px; line-height: 18px; background: rgba(30, 30, 30, 0.85); color: #E0E0E0; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
+        .legend h4 { margin: 0 0 5px; text-align: center; }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.9; border-radius: 3px; }
+        .legend-info { margin-top: 10px; font-style: italic; font-size: 0.9em; color: #aaa; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Painel de Monitoramento</h1>
-        <div class="location-list">
-            {% for local in localidades %}
-                <a href="/localidade/{{ local }}" id="local-{{ local }}" style="background-color: {{ estados_iniciais[local].cor_fundo }};">
-                    <span>Localidade {{ local }}</span>
-                    <span class="risk-status" id="risco-{{ local }}">{{ estados_iniciais[local].risco }}</span>
-                </a>
-            {% endfor %}
+        
+        <div class="content-box">
+             <h1>Mapa de Monitoramento</h1>
+             <div id="map"></div>
+        </div>
+
+        <div class="content-box">
+            <h1>Lista de Localidades</h1>
+            <div class="location-list">
+                {% for local_id, local_info in localidades_data.items() %}
+                    <a href="/localidade/{{ local_id }}" id="local-{{ local_id }}" style="background-color: {{ estados_iniciais[local_id].cor_fundo }};">
+                        <span>{{ local_info.nome }} ({{ local_id }})</span>
+                        <span class="risk-status" id="risco-{{ local_id }}">{{ estados_iniciais[local_id].risco }}</span>
+                    </a>
+                {% endfor %}
+            </div>
         </div>
     </div>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="text/javascript">
-        var socket = io();
+        const localidades = {{ localidades_data|tojson }};
+        const map = L.map('map').setView([-23.21, -45.9], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        const markers = {};
+        function createIcon(color) {
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style='background-color:${color};width:24px;height:24px;border-radius:50%;border:2px solid white;'></div>`,
+                iconSize: [30, 42], iconAnchor: [15, 42], popupAnchor: [0, -35]
+            });
+        }
+        
+        const icons = {
+            '#B22222': createIcon('#B22222'), '#FF8C00': createIcon('#FF8C00'),
+            '#228B22': createIcon('#228B22'), '#333': createIcon('#333')
+        };
+        
+        for (const id in localidades) {
+            const local = localidades[id];
+            const estadoInicial = {{ estados_iniciais|tojson }}[id];
+            const marker = L.marker([local.lat, local.lon], {
+                icon: icons[estadoInicial.cor_fundo] || icons['#333']
+            }).addTo(map);
+            marker.bindPopup(`<b>${local.nome} (${id})</b><br><a href="/localidade/${id}">Ver detalhes</a>`);
+            markers[id] = marker;
+        }
+
+        const legend = L.control({position: 'bottomright'});
+        legend.onAdd = function (map) {
+            const div = L.DomUtil.create('div', 'info legend');
+            const grades = [
+                {color: "#B22222", label: "Risco Alto"},
+                {color: "#FF8C00", label: "Risco Médio"},
+                {color: "#228B22", label: "Risco Baixo"}
+            ];
+            div.innerHTML += '<h4>Legenda de Risco</h4>';
+            for (let i = 0; i < grades.length; i++) {
+                div.innerHTML += '<i style="background:' + grades[i].color + '"></i> ' + grades[i].label + '<br>';
+            }
+            div.innerHTML += '<div class="legend-info">Clique em um ponto para mais detalhes.</div>';
+            return div;
+        };
+        legend.addTo(map);
+
+        // ATUALIZAÇÃO: Conexão explícita com o servidor
+        // Isso garante que o cliente se conecte ao URL correto, mesmo em produção
+        const socket = io.connect(window.location.origin);
+
         socket.on('update_index', function(data) {
             for (const localId in data) {
                 const localData = data[localId];
                 const linkElement = document.getElementById('local-' + localId);
                 const riskSpan = document.getElementById('risco-' + localId);
-
                 if (linkElement && riskSpan) {
                     linkElement.style.backgroundColor = localData.cor_fundo;
                     riskSpan.textContent = localData.risco;
+                }
+                
+                const markerToUpdate = markers[localId];
+                if (markerToUpdate) {
+                    markerToUpdate.setIcon(icons[localData.cor_fundo] || icons['#333']);
                 }
             }
         });
     </script>
 </body>
 </html>
+

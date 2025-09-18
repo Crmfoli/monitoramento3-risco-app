@@ -1,4 +1,4 @@
-# app.py
+ app.py
 
 import eventlet
 eventlet.monkey_patch()
@@ -10,8 +10,7 @@ import random
 from datetime import datetime
 from collections import deque
 
-# --- ALTERAÇÃO 1: Configuração das Localidades com Geolocalização ---
-# Trocamos a lista simples por um dicionário com nomes e coordenadas.
+# --- Configuração das Localidades com Geolocalização ---
 LOCALIDADES = {
     'A': {'nome': 'Jardim Satélite', 'lat': -23.2359, 'lon': -45.9010},
     'B': {'nome': 'Parque Industrial', 'lat': -23.2385, 'lon': -45.9222},
@@ -21,8 +20,8 @@ LOCALIDADES = {
 }
 
 
-# --- Armazenamento de Dados (adaptado para o novo formato de LOCALIDADES) ---
-MAX_HISTORICO_PONTOS = (3600 * 24) // 5 # Armazena 1 dia de dados (1 ponto a cada 5s)
+# --- Armazenamento de Dados ---
+MAX_HISTORICO_PONTOS = (3600 * 24) // 5
 HISTORICO_CHUVA = {local_id: deque(maxlen=MAX_HISTORICO_PONTOS) for local_id in LOCALIDADES}
 HISTORICO_UMIDADE = {local_id: deque(maxlen=MAX_HISTORICO_PONTOS) for local_id in LOCALIDADES}
 
@@ -30,7 +29,7 @@ ESTADO_ATUAL_LOCALIDADES = {
     local_id: {"risco": "Calculando...", "cor_fundo": "#333"} for local_id in LOCALIDADES
 }
 
-# --- Lógica de Simulação e Análise (sem alterações) ---
+# --- Lógica de Simulação e Análise ---
 def simular_dados_sensores():
     umidade = round(random.uniform(40.0, 99.0), 2)
     chuva_24h = round(random.uniform(0.0, 100.0), 2)
@@ -48,8 +47,8 @@ def analisar_risco(dados):
 
 # --- Configuração do App Flask e SocketIO ---
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'uma-chave-secreta-padrao')
-socketio = SocketIO(app)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'uma-chave-secreta-para-producao-forte')
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 thread = None
 
@@ -78,13 +77,11 @@ def background_data_generator():
             }, to=local)
 
         socketio.emit('update_index', ESTADO_ATUAL_LOCALIDADES)
-        socketio.sleep(5) # Usar socketio.sleep é crucial para não bloquear o servidor
+        socketio.sleep(5)
 
 # --- Rotas da Aplicação ---
 @app.route('/')
 def index():
-    # --- ALTERAÇÃO 2: Passar o dicionário completo para o template ---
-    # O template precisa das coordenadas para renderizar o mapa.
     return render_template('index.html', 
                            localidades_data=LOCALIDADES, 
                            estados_iniciais=ESTADO_ATUAL_LOCALIDADES)
@@ -94,6 +91,11 @@ def mostrar_localidade(nome_localidade):
     if nome_localidade in LOCALIDADES:
         return render_template('localidade.html', nome_localidade=nome_localidade)
     return "Localidade não encontrada", 404
+
+# ROTA DE VERIFICAÇÃO DE SAÚDE PARA O RENDER
+@app.route('/health')
+def health_check():
+    return "OK", 200
 
 # --- Rotas de API para o Histórico ---
 @app.route('/api/historico_chuva/<nome_localidade>')
@@ -119,8 +121,3 @@ def handle_connect():
 def on_join(data):
     localidade = data['localidade']
     join_room(localidade)
-
-# --- Ponto de Entrada ---
-if __name__ == '__main__':
-    print("Servidor rodando localmente em http://127.0.0.1:5000")
-    socketio.run(app, debug=True, port=5000)

@@ -1,123 +1,131 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Painel de Monitoramento de Localidades</title>
-    
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-        body { font-family: 'Roboto', sans-serif; background-color: #121212; color: #E0E0E0; text-align: center; margin: 0; padding: 20px 0; }
-        .container { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 40px; }
-        .content-box { border-radius: 15px; padding: 40px; width: 80%; max-width: 600px; background-color: #1E1E1E; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h1 { color: #FFFFFF; margin-top:0; margin-bottom: 30px; }
-        #map { height: 400px; width: 100%; border-radius: 15px; margin-bottom: 20px; border: 2px solid #333; }
-        .location-list a { display: flex; justify-content: space-between; align-items: center; background-color: #333; color: #E0E0E0; padding: 20px; margin-bottom: 15px; border-radius: 10px; text-decoration: none; font-size: 1.5em; transition: background-color 0.5s ease, transform 0.2s ease; }
-        .location-list a:hover { transform: scale(1.03); color: #FFFFFF; }
-        .risk-status { font-size: 0.8em; font-weight: 700; padding: 5px 10px; border-radius: 5px; background-color: rgba(0,0,0,0.2); }
-        .leaflet-popup-content-wrapper { background-color: #2a2a2a; color: #E0E0E0; border-radius: 8px; }
-        .leaflet-popup-content { font-size: 14px; }
-        .leaflet-popup-content a { color: #87CEEB; }
-        .leaflet-popup-tip { background-color: #2a2a2a; }
-        .legend { padding: 6px 8px; line-height: 18px; background: rgba(30, 30, 30, 0.85); color: #E0E0E0; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
-        .legend h4 { margin: 0 0 5px; text-align: center; }
-        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.9; border-radius: 3px; }
-        .legend-info { margin-top: 10px; font-style: italic; font-size: 0.9em; color: #aaa; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        
-        <div class="content-box">
-             <h1>Mapa de Monitoramento</h1>
-             <div id="map"></div>
-        </div>
+# app.py
+# CORREÇÃO: Garantindo que não há indentação inesperada no início do arquivo.
 
-        <div class="content-box">
-            <h1>Lista de Localidades</h1>
-            <div class="location-list">
-                {% for local_id, local_info in localidades_data.items() %}
-                    <a href="/localidade/{{ local_id }}" id="local-{{ local_id }}" style="background-color: {{ estados_iniciais[local_id].cor_fundo }};">
-                        <span>{{ local_info.nome }} ({{ local_id }})</span>
-                        <span class="risk-status" id="risco-{{ local_id }}">{{ estados_iniciais[local_id].risco }}</span>
-                    </a>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
+import eventlet
+eventlet.monkey_patch()
 
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script type="text/javascript">
-        const localidades = {{ localidades_data|tojson }};
-        const map = L.map('map').setView([-23.21, -45.9], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
+import os
+from flask import Flask, render_template, jsonify
+from flask_socketio import SocketIO, emit, join_room
+import random
+from datetime import datetime
+from collections import deque
 
-        const markers = {};
-        function createIcon(color) {
-            return L.divIcon({
-                className: 'custom-div-icon',
-                html: `<div style='background-color:${color};width:24px;height:24px;border-radius:50%;border:2px solid white;'></div>`,
-                iconSize: [30, 42], iconAnchor: [15, 42], popupAnchor: [0, -35]
-            });
-        }
-        
-        const icons = {
-            '#B22222': createIcon('#B22222'), '#FF8C00': createIcon('#FF8C00'),
-            '#228B22': createIcon('#228B22'), '#333': createIcon('#333')
-        };
-        
-        for (const id in localidades) {
-            const local = localidades[id];
-            const estadoInicial = {{ estados_iniciais|tojson }}[id];
-            const marker = L.marker([local.lat, local.lon], {
-                icon: icons[estadoInicial.cor_fundo] || icons['#333']
-            }).addTo(map);
-            marker.bindPopup(`<b>${local.nome} (${id})</b><br><a href="/localidade/${id}">Ver detalhes</a>`);
-            markers[id] = marker;
-        }
+# --- Configuração das Localidades com Geolocalização ---
+LOCALIDADES = {
+    'A': {'nome': 'Jardim Satélite', 'lat': -23.2359, 'lon': -45.9010},
+    'B': {'nome': 'Parque Industrial', 'lat': -23.2385, 'lon': -45.9222},
+    'C': {'nome': 'Vila Ema', 'lat': -23.2088, 'lon': -45.8971},
+    'D': {'nome': 'Urbanova', 'lat': -23.2031, 'lon': -45.9458},
+    'E': {'nome': 'Centro', 'lat': -23.1813, 'lon': -45.8820}
+}
 
-        const legend = L.control({position: 'bottomright'});
-        legend.onAdd = function (map) {
-            const div = L.DomUtil.create('div', 'info legend');
-            const grades = [
-                {color: "#B22222", label: "Risco Alto"},
-                {color: "#FF8C00", label: "Risco Médio"},
-                {color: "#228B22", label: "Risco Baixo"}
-            ];
-            div.innerHTML += '<h4>Legenda de Risco</h4>';
-            for (let i = 0; i < grades.length; i++) {
-                div.innerHTML += '<i style="background:' + grades[i].color + '"></i> ' + grades[i].label + '<br>';
-            }
-            div.innerHTML += '<div class="legend-info">Clique em um ponto para mais detalhes.</div>';
-            return div;
-        };
-        legend.addTo(map);
 
-        // ATUALIZAÇÃO: Conexão explícita com o servidor
-        // Isso garante que o cliente se conecte ao URL correto, mesmo em produção
-        const socket = io.connect(window.location.origin);
+# --- Armazenamento de Dados ---
+MAX_HISTORICO_PONTOS = (3600 * 24) // 5
+HISTORICO_CHUVA = {local_id: deque(maxlen=MAX_HISTORICO_PONTOS) for local_id in LOCALIDADES}
+HISTORICO_UMIDADE = {local_id: deque(maxlen=MAX_HISTORICO_PONTOS) for local_id in LOCALIDADES}
 
-        socket.on('update_index', function(data) {
-            for (const localId in data) {
-                const localData = data[localId];
-                const linkElement = document.getElementById('local-' + localId);
-                const riskSpan = document.getElementById('risco-' + localId);
-                if (linkElement && riskSpan) {
-                    linkElement.style.backgroundColor = localData.cor_fundo;
-                    riskSpan.textContent = localData.risco;
-                }
-                
-                const markerToUpdate = markers[localId];
-                if (markerToUpdate) {
-                    markerToUpdate.setIcon(icons[localData.cor_fundo] || icons['#333']);
-                }
-            }
-        });
-    </script>
-</body>
-</html>
+ESTADO_ATUAL_LOCALIDADES = {
+    local_id: {"risco": "Calculando...", "cor_fundo": "#333"} for local_id in LOCALIDADES
+}
+
+# --- Lógica de Simulação e Análise ---
+def simular_dados_sensores():
+    umidade = round(random.uniform(40.0, 99.0), 2)
+    chuva_24h = round(random.uniform(0.0, 100.0), 2)
+    return {"umidade_solo": umidade, "chuva_24h": chuva_24h}
+
+def analisar_risco(dados):
+    umidade = dados["umidade_solo"]
+    chuva = dados["chuva_24h"]
+    if umidade > 85 and chuva > 50:
+        return "RISCO ALTO", "#B22222"
+    elif umidade > 70 and chuva > 30:
+        return "RISCO MÉDIO", "#FF8C00"
+    else:
+        return "RISCO BAIXO", "#228B22"
+
+# --- Configuração do App Flask e SocketIO ---
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'uma-chave-secreta-para-producao-forte')
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+
+thread = None
+
+# --- Processo em Background para Gerar Dados ---
+def background_data_generator():
+    global ESTADO_ATUAL_LOCALIDADES
+    while True:
+        for local in LOCALIDADES:
+            dados = simular_dados_sensores()
+            risco, cor = analisar_risco(dados)
+            timestamp_atual_obj = datetime.now()
+            timestamp_atual_str = timestamp_atual_obj.strftime("%d/%m/%Y %H:%M:%S")
+
+            iso_timestamp = timestamp_atual_obj.isoformat()
+            HISTORICO_CHUVA[local].append({"timestamp": iso_timestamp, "chuva": dados['chuva_24h']})
+            HISTORICO_UMIDADE[local].append({"timestamp": iso_timestamp, "umidade": dados['umidade_solo']})
+
+            ESTADO_ATUAL_LOCALIDADES[local] = {"risco": risco, "cor_fundo": cor}
+
+            socketio.emit('update_data', {
+                'umidade': dados['umidade_solo'],
+                'chuva': dados['chuva_24h'],
+                'risco': risco,
+                'cor_fundo': cor,
+                'timestamp': timestamp_atual_str
+            }, to=local)
+
+        socketio.emit('update_index', ESTADO_ATUAL_LOCALIDADES)
+        socketio.sleep(5)
+
+# --- Rotas da Aplicação ---
+@app.route('/')
+def index():
+    return render_template('index.html', 
+                           localidades_data=LOCALIDADES, 
+                           estados_iniciais=ESTADO_ATUAL_LOCALIDADES)
+
+@app.route('/localidade/<nome_localidade>')
+def mostrar_localidade(nome_localidade):
+    if nome_localidade in LOCALIDADES:
+        return render_template('localidade.html', nome_localidade=nome_localidade)
+    return "Localidade não encontrada", 404
+
+# ROTA DE VERIFICAÇÃO DE SAÚDE PARA O RENDER
+@app.route('/health')
+def health_check():
+    return "OK", 200
+
+# --- Rotas de API para o Histórico ---
+@app.route('/api/historico_chuva/<nome_localidade>')
+def get_historico_chuva(nome_localidade):
+    if nome_localidade in LOCALIDADES:
+        return jsonify(list(HISTORICO_CHUVA[nome_localidade]))
+    return jsonify({"error": "Localidade não encontrada"}), 404
+
+@app.route('/api/historico_umidade/<nome_localidade>')
+def get_historico_umidade(nome_localidade):
+    if nome_localidade in LOCALIDADES:
+        return jsonify(list(HISTORICO_UMIDADE[nome_localidade]))
+    return jsonify({"error": "Localidade não encontrada"}), 404
+
+# --- Eventos Socket.IO ---
+@socketio.on('connect')
+def handle_connect():
+    global thread
+    if thread is None:
+        thread = socketio.start_background_task(target=background_data_generator)
+
+@socketio.on('join')
+def on_join(data):
+    localidade = data['localidade']
+    join_room(localidade)
+
+# --- Ponto de Entrada ---
+if __name__ == '__main__':
+    print("Servidor rodando localmente em http://127.0.0.1:5000")
+    socketio.run(app, debug=True, port=5000)
+
 
